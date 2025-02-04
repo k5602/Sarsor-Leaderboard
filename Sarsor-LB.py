@@ -526,8 +526,18 @@ def check_warning_badges(participant_data, historical_data):
     warnings = []
     if participant_data['Rank'] >= len(DEFAULT_PARTICIPANTS) - 1:
         warnings.append(WARNING_BADGES["⚠️ Performance Alert"])
-    if len(historical_data) >= 3 and all(historical_data[i]['Total Points'] > historical_data[i+1]['Total Points'] for i in range(-3, -1)):
-        warnings.append(WARNING_BADGES["📉 Declining Trend"])
+    
+    # Convert historical data to list and ensure proper date sorting
+    if isinstance(historical_data, pd.DataFrame):
+        historical_points = historical_data['Total Points'].tolist()
+    else:
+        historical_points = [d['Total Points'] for d in historical_data]
+    
+    if len(historical_points) >= 3:
+        # Check for declining trend in the last 3 entries
+        if all(historical_points[i] > historical_points[i+1] for i in range(len(historical_points)-3, len(historical_points)-1)):
+            warnings.append(WARNING_BADGES["📉 Declining Trend"])
+    
     if participant_data['Total Points'] < 50:
         warnings.append(WARNING_BADGES["❌ Missed Goals"])
     return warnings
@@ -674,19 +684,21 @@ current_tab = st.tabs(tabs)
 
 def calculate_cumulative_points(df, current_month):
     try:
+        # Create a copy of the dataframe to avoid modifications to original
+        df = df.copy()
+        
+        # Ensure Date column is datetime
+        df['Date'] = pd.to_datetime(df['Date'])
+        
         # Convert current_month to Period if needed
         if isinstance(current_month, str):
             current_month = pd.Period(current_month)
         
-        # Ensure date comparison compatibility
+        # Filter for current month
         monthly_df = df[df['Month'] == current_month].copy()
         
         if monthly_df.empty:
-            # Return empty DataFrame with correct columns
             return pd.DataFrame(columns=['Name', 'Rank', 'Base Points', 'Bonus Points', 'Total Points'])
-        
-        monthly_df['Date'] = pd.to_datetime(monthly_df['Date']).dt.date  # Normalize dates
-        monthly_df = monthly_df.sort_values('Date')
         
         # Calculate daily totals
         daily_totals = monthly_df.groupby(['Name', 'Date']).agg({
@@ -701,7 +713,7 @@ def calculate_cumulative_points(df, current_month):
             name = row['Name']
             if name not in cumulative_points:
                 cumulative_points[name] = {
-                    'Name': name,  # Add Name explicitly
+                    'Name': name,
                     'Base Points': row['Base Points'],
                     'Bonus Points': row['Bonus Points'],
                     'Total Points': 0
@@ -720,12 +732,10 @@ def calculate_cumulative_points(df, current_month):
         # Calculate ranks
         cumulative_df['Rank'] = cumulative_df['Total Points'].rank(method='min', ascending=False).astype(int)
         
-        # Return sorted DataFrame with specific columns
         return cumulative_df[['Name', 'Rank', 'Base Points', 'Bonus Points', 'Total Points']].sort_values('Rank')
     
     except Exception as e:
         st.error(f"Error calculating points: {str(e)}")
-        # Return empty DataFrame with correct columns
         return pd.DataFrame(columns=['Name', 'Rank', 'Base Points', 'Bonus Points', 'Total Points'])
 
 with current_tab[0]:
@@ -737,16 +747,21 @@ with current_tab[0]:
         display_leaderboard(cumulative_df, badges_data)
         
         for _, participant_data in cumulative_df.iterrows():
+            # Ensure proper date handling for historical data
             historical_data = st.session_state.df[
                 st.session_state.df['Name'] == participant_data['Name']
-            ].sort_values('Date')
-            warning_badges = check_warning_badges(participant_data, historical_data.to_dict('records'))
+            ].copy()
+            
+            # Convert Date column to datetime if it isn't already
+            if 'Date' in historical_data.columns:
+                historical_data['Date'] = pd.to_datetime(historical_data['Date'])
+                historical_data = historical_data.sort_values('Date', ascending=False)
+            
+            warning_badges = check_warning_badges(participant_data, historical_data)
             if warning_badges:
                 with st.expander(f"⚠️ Warnings for {participant_data['Name']}"):
                     for warning in warning_badges:
                         st.markdown(f"- {warning}")
-    else:
-        st.warning("No entries for current month")
 
 with current_tab[1]:
     st.subheader("Monthly Analytics")

@@ -231,26 +231,31 @@ def display_leaderboard(cumulative_df, badges_data):
     cols = st.columns([3, 1])
     
     with cols[0]:
-        # Ensure matplotlib is properly initialized
-        plt.style.use('default')
-        
-        st.dataframe(
-            cumulative_df[['Rank', 'Name', 'Base Points', 'Bonus Points', 'Total Points']]
-            .style
-            .background_gradient(subset=['Total Points'], cmap='YlGn')
-            .format({'Base Points': '{:.0f}', 'Bonus Points': '{:.0f}', 'Total Points': '{:.0f}'}),
-            use_container_width=True,
-            hide_index=True
-        )
+        if not cumulative_df.empty:
+            # Ensure all required columns exist
+            display_df = cumulative_df[['Name', 'Rank', 'Base Points', 'Bonus Points', 'Total Points']]
+            
+            st.dataframe(
+                display_df.style
+                .background_gradient(subset=['Total Points'], cmap='YlGn')
+                .format({'Base Points': '{:.0f}', 'Bonus Points': '{:.0f}', 'Total Points': '{:.0f}'}),
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No data to display")
     
     with cols[1]:
         st.markdown("### 🏅 Top 3 Performers")
         top_3 = cumulative_df.head(3)
-        for idx, row in top_3.iterrows():
-            medal = "🥇" if row['Rank'] == 1 else "🥈" if row['Rank'] == 2 else "🥉"
-            st.markdown(f"{medal} {row['Name']} - {int(row['Total Points'])} pts")
-            if row['Name'] in badges_data:
-                st.markdown(" ".join(badges_data[row['Name']]))
+        if not top_3.empty:
+            for idx, row in top_3.iterrows():
+                medal = "🥇" if row['Rank'] == 1 else "🥈" if row['Rank'] == 2 else "🥉"
+                st.markdown(f"{medal} {row['Name']} - {int(row['Total Points'])} pts")
+                if row['Name'] in badges_data:
+                    st.markdown(" ".join(badges_data[row['Name']]))
+        else:
+            st.info("No performers to display")
 
 def badge_management():
     st.markdown("### 🏅 Badge Management")
@@ -687,6 +692,11 @@ def calculate_cumulative_points(df, current_month):
         
         # Ensure date comparison compatibility
         monthly_df = df[df['Month'] == current_month].copy()
+        
+        if monthly_df.empty:
+            # Return empty DataFrame with correct columns
+            return pd.DataFrame(columns=['Name', 'Rank', 'Base Points', 'Bonus Points', 'Total Points'])
+        
         monthly_df['Date'] = pd.to_datetime(monthly_df['Date']).dt.date  # Normalize dates
         monthly_df = monthly_df.sort_values('Date')
         
@@ -697,27 +707,38 @@ def calculate_cumulative_points(df, current_month):
             'Total Points': 'sum'
         }).reset_index()
         
-        # Rest of the function remains the same
         # Calculate cumulative totals
         cumulative_points = {}
         for _, row in daily_totals.iterrows():
             name = row['Name']
             if name not in cumulative_points:
                 cumulative_points[name] = {
+                    'Name': name,  # Add Name explicitly
                     'Base Points': row['Base Points'],
                     'Bonus Points': row['Bonus Points'],
                     'Total Points': 0
                 }
             cumulative_points[name]['Total Points'] += row['Total Points']
         
-        cumulative_df = pd.DataFrame.from_dict(cumulative_points, orient='index').reset_index()
-        cumulative_df.columns = ['Name', 'Base Points', 'Bonus Points', 'Total Points']
+        # Convert to DataFrame
+        cumulative_df = pd.DataFrame.from_dict(cumulative_points, orient='index').reset_index(drop=True)
+        
+        # Ensure all required columns exist
+        required_columns = ['Name', 'Base Points', 'Bonus Points', 'Total Points']
+        for col in required_columns:
+            if col not in cumulative_df.columns:
+                cumulative_df[col] = 0
+        
+        # Calculate ranks
         cumulative_df['Rank'] = cumulative_df['Total Points'].rank(method='min', ascending=False).astype(int)
         
-        return cumulative_df.sort_values('Rank')
+        # Return sorted DataFrame with specific columns
+        return cumulative_df[['Name', 'Rank', 'Base Points', 'Bonus Points', 'Total Points']].sort_values('Rank')
+    
     except Exception as e:
         st.error(f"Error calculating points: {str(e)}")
-        return pd.DataFrame()
+        # Return empty DataFrame with correct columns
+        return pd.DataFrame(columns=['Name', 'Rank', 'Base Points', 'Bonus Points', 'Total Points'])
 
 with current_tab[0]:
     current_month = datetime.now().strftime('%Y-%m')

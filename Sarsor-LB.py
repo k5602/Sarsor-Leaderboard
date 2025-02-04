@@ -133,8 +133,8 @@ def load_data():
     try:
         if os.path.exists(DATA_FILE):
             df = pd.read_csv(DATA_FILE)
-            # Ensure date column is properly converted to datetime
-            df['Date'] = pd.to_datetime(df['Date'])
+            # Handle different date formats more flexibly
+            df['Date'] = pd.to_datetime(df['Date'], format='mixed')
             df['Month'] = pd.to_datetime(df['Date']).dt.to_period('M')
             return df
     except Exception as e:
@@ -146,14 +146,17 @@ def load_data():
     ] + list(CATEGORIES.keys()))
 
 def save_data(df):
+    # Ensure date is in consistent format before saving
+    if 'Date' in df.columns:
+        df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
     df.to_csv(DATA_FILE, index=False)
 
 def initialize_month():
-    current_date = pd.Timestamp(datetime.now().date())  # Convert to Pandas Timestamp
-    new_month = current_date.to_period('M')
+    current_date = pd.Timestamp(datetime.now().date()).strftime('%Y-%m-%d')
+    new_month = pd.Period(datetime.now(), freq='M')
     return pd.DataFrame([{
         'Name': name,
-        'Date': current_date,  # Store as Timestamp
+        'Date': current_date,
         'Month': new_month,
         'Base Points': 0,
         'Bonus Points': 0,
@@ -163,7 +166,7 @@ def initialize_month():
 
 # Add helper function to update points - moved from bottom to here
 def update_participant_points(participant, points):
-    current_date = datetime.now().date()
+    current_date = datetime.now().strftime('%Y-%m-%d')  # Format date consistently
     new_entry = {
         'Name': participant,
         'Date': current_date,
@@ -687,8 +690,8 @@ def calculate_cumulative_points(df, current_month):
         # Create a copy of the dataframe to avoid modifications to original
         df = df.copy()
         
-        # Ensure Date column is datetime
-        df['Date'] = pd.to_datetime(df['Date'])
+        # Ensure Date column is datetime with flexible parsing
+        df['Date'] = pd.to_datetime(df['Date'], format='mixed')
         
         # Convert current_month to Period if needed
         if isinstance(current_month, str):
@@ -907,7 +910,7 @@ if st.session_state.admin:
             if st.button("Save Entry"):
                 new_entry = {
                     'Name': selected_name,
-                    'Date': edit_date,
+                    'Date': edit_date.strftime('%Y-%m-%d'),  # Format date consistently
                     'Month': pd.Period(edit_date, freq='M'),
                     **base_points,
                     'Base Points': total_base,
@@ -927,7 +930,6 @@ if st.session_state.admin:
             # Edit existing entry
             st.subheader("Edit Existing Entry")
             
-            # Date filter for existing entries
             # Convert dates properly
             available_dates = pd.to_datetime(st.session_state.df['Date']).dt.date.unique()
             if len(available_dates) > 0:
@@ -937,7 +939,6 @@ if st.session_state.admin:
                     key="edit_entry_date"
                 )
                 
-                # Get entries for selected date - fixed date comparison
                 date_entries = st.session_state.df[
                     pd.to_datetime(st.session_state.df['Date']).dt.date == selected_date
                 ]

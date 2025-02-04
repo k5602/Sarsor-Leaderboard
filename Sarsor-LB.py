@@ -930,8 +930,10 @@ if st.session_state.admin:
             # Edit existing entry
             st.subheader("Edit Existing Entry")
             
-            # Convert dates properly
-            available_dates = pd.to_datetime(st.session_state.df['Date']).dt.date.unique()
+            # Ensure dates are properly converted to datetime
+            st.session_state.df['Date'] = pd.to_datetime(st.session_state.df['Date'])
+            available_dates = st.session_state.df['Date'].dt.date.unique()
+            
             if len(available_dates) > 0:
                 selected_date = st.selectbox(
                     "Select Date to Edit",
@@ -940,7 +942,7 @@ if st.session_state.admin:
                 )
                 
                 date_entries = st.session_state.df[
-                    pd.to_datetime(st.session_state.df['Date']).dt.date == selected_date
+                    st.session_state.df['Date'].dt.date == selected_date
                 ]
                 
                 if not date_entries.empty:
@@ -980,16 +982,14 @@ if st.session_state.admin:
                         st.metric("Total Points", f"{total_points}/150")
                     
                     if st.button("Update Entry"):
-                        # Remove existing entry
-                        st.session_state.df = st.session_state.df[
-                            ~((st.session_state.df['Date'].dt.date == selected_date) &
-                              (st.session_state.df['Name'] == selected_entry_name))
-                        ]
+                        # Remove existing entry using proper date comparison
+                        mask = (st.session_state.df['Date'].dt.date == selected_date) & (st.session_state.df['Name'] == selected_entry_name)
+                        st.session_state.df = st.session_state.df[~mask]
                         
                         # Add updated entry
                         updated_entry = {
                             'Name': selected_entry_name,
-                            'Date': selected_date,
+                            'Date': pd.to_datetime(selected_date),  # Convert to datetime
                             'Month': pd.Period(selected_date, freq='M'),
                             **base_points,
                             'Base Points': total_base,

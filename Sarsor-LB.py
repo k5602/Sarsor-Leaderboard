@@ -9,6 +9,7 @@ import json
 from PIL import Image
 import base64
 from dotenv import load_dotenv  # Add this import
+import matplotlib.pyplot as plt  # Add this import
 
 st.set_page_config(page_title="Monthly Leaderboard", layout="wide")
 
@@ -85,7 +86,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-key_input = st.text_input("", key="admin-key-input")
+key_input = st.text_input("Hidden Input", key="admin-key-input", label_visibility="collapsed")
 
 # Check for admin access code
 if key_input == ADMIN_CODE:
@@ -127,9 +128,24 @@ def verify_password(password):
 # Data management
 def load_data():
     if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE, parse_dates=['Date'])
-        df['Month'] = df['Date'].dt.to_period('M')
-        return df
+        try:
+            # Add date format specification
+            df = pd.read_csv(DATA_FILE, parse_dates=['Date'], dayfirst=True)
+            
+            # Convert to datetime if needed
+            if not pd.api.types.is_datetime64_any_dtype(df['Date']):
+                df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            
+            # Handle NaT values
+            df = df.dropna(subset=['Date'])
+            df['Month'] = df['Date'].dt.to_period('M')
+            
+            return df
+        except Exception as e:
+            st.error(f"Error loading data: {str(e)}")
+            return pd.DataFrame(columns=[
+                'Name', 'Date', 'Month', 'Base Points', 'Bonus Points', 'Total Points'
+            ] + list(CATEGORIES.keys()))
     return pd.DataFrame(columns=[
         'Name', 'Date', 'Month', 'Base Points', 'Bonus Points', 'Total Points'
     ] + list(CATEGORIES.keys()))
@@ -138,11 +154,11 @@ def save_data(df):
     df.to_csv(DATA_FILE, index=False)
 
 def initialize_month():
-    current_date = datetime.now()
-    new_month = current_date.strftime('%Y-%m')
+    current_date = pd.Timestamp(datetime.now().date())  # Convert to Pandas Timestamp
+    new_month = current_date.to_period('M')
     return pd.DataFrame([{
         'Name': name,
-        'Date': current_date.date(),
+        'Date': current_date,  # Store as Timestamp
         'Month': new_month,
         'Base Points': 0,
         'Bonus Points': 0,
@@ -188,6 +204,9 @@ def display_leaderboard(cumulative_df, badges_data):
     cols = st.columns([3, 1])
     
     with cols[0]:
+        # Ensure matplotlib is properly initialized
+        plt.style.use('default')
+        
         st.dataframe(
             cumulative_df[['Rank', 'Name', 'Base Points', 'Bonus Points', 'Total Points']]
             .style
@@ -629,33 +648,44 @@ if st.session_state.admin:
 current_tab = st.tabs(tabs)
 
 def calculate_cumulative_points(df, current_month):
-    monthly_df = df[df['Month'] == current_month].copy()
-    monthly_df = monthly_df.sort_values('Date')
-    
-    # Calculate daily totals (reset daily except Total Points)
-    daily_totals = monthly_df.groupby(['Name', 'Date']).agg({
-        'Base Points': 'last',  # Take last entry of the day
-        'Bonus Points': 'last',  # Take last entry of the day
-        'Total Points': 'sum'  # Sum all points for the day
-    }).reset_index()
-    
-    # Calculate cumulative totals
-    cumulative_points = {}
-    for _, row in daily_totals.iterrows():
-        name = row['Name']
-        if name not in cumulative_points:
-            cumulative_points[name] = {
-                'Base Points': row['Base Points'],
-                'Bonus Points': row['Bonus Points'],
-                'Total Points': 0
-            }
-        cumulative_points[name]['Total Points'] += row['Total Points']
-    
-    cumulative_df = pd.DataFrame.from_dict(cumulative_points, orient='index').reset_index()
-    cumulative_df.columns = ['Name', 'Base Points', 'Bonus Points', 'Total Points']
-    cumulative_df['Rank'] = cumulative_df['Total Points'].rank(method='min', ascending=False).astype(int)
-    
-    return cumulative_df.sort_values('Rank')
+    try:
+        # Convert current_month to Period if needed
+        if isinstance(current_month, str):
+            current_month = pd.Period(current_month)
+        
+        # Ensure date comparison compatibility
+        monthly_df = df[df['Month'] == current_month].copy()
+        monthly_df['Date'] = pd.to_datetime(monthly_df['Date']).dt.date  # Normalize dates
+        monthly_df = monthly_df.sort_values('Date')
+        
+        # Calculate daily totals
+        daily_totals = monthly_df.groupby(['Name', 'Date']).agg({
+            'Base Points': 'last',
+            'Bonus Points': 'last',
+            'Total Points': 'sum'
+        }).reset_index()
+        
+        # Rest of the function remains the same
+        # Calculate cumulative totals
+        cumulative_points = {}
+        for _, row in daily_totals.iterrows():
+            name = row['Name']
+            if name not in cumulative_points:
+                cumulative_points[name] = {
+                    'Base Points': row['Base Points'],
+                    'Bonus Points': row['Bonus Points'],
+                    'Total Points': 0
+                }
+            cumulative_points[name]['Total Points'] += row['Total Points']
+        
+        cumulative_df = pd.DataFrame.from_dict(cumulative_points, orient='index').reset_index()
+        cumulative_df.columns = ['Name', 'Base Points', 'Bonus Points', 'Total Points']
+        cumulative_df['Rank'] = cumulative_df['Total Points'].rank(method='min', ascending=False).astype(int)
+        
+        return cumulative_df.sort_values('Rank')
+    except Exception as e:
+        st.error(f"Error calculating points: {str(e)}")
+        return pd.DataFrame()
 
 with current_tab[0]:
     current_month = datetime.now().strftime('%Y-%m')

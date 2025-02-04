@@ -9,15 +9,17 @@ import json
 from PIL import Image
 import base64
 from dotenv import load_dotenv  
-import matplotlib.pyplot as plt  
+import matplotlib.pyplot as plt 
 
 st.set_page_config(page_title="Monthly Leaderboard", layout="wide")
 
+# Core configuration - Edit these values to customize the leaderboard
 DEFAULT_PARTICIPANTS = ['Sama', 'Nader', 'Desha', 'Sara', 'Youssef',
                        'Menna', 'Gasser', 'Hams', 'Rowan', 'Nada', 'Khaled']
 MAX_DAILY_BASE = 100
 MAX_BONUS = 50
 
+# Performance categories and their maximum points
 CATEGORIES = {
     'Academic Performance': 30,
     'Project Task Completion': 25,
@@ -26,6 +28,7 @@ CATEGORIES = {
     'Presentation and Communication': 10
 }
 
+# File paths for data storage
 DATA_FILE = 'leaderboard_data.csv'
 BADGES_FILE = 'badges.json'
 PARTICIPANT_BADGES_FILE = 'participant_badges.json'
@@ -162,6 +165,26 @@ def initialize_month():
         'Total Points': 0,
         **{k: 0 for k in CATEGORIES}
     } for name in DEFAULT_PARTICIPANTS])
+
+# Add helper function to update points - moved from bottom to here
+def update_participant_points(participant, points):
+    current_date = datetime.now().date()
+    new_entry = {
+        'Name': participant,
+        'Date': current_date,
+        'Month': pd.Period(current_date, freq='M'),
+        'Base Points': 0,
+        'Bonus Points': points,
+        'Total Points': points,
+        **{k: 0 for k in CATEGORIES}  # Add CATEGORIES fields with default 0
+    }
+    
+    st.session_state.df = pd.concat([
+        st.session_state.df,
+        pd.DataFrame([new_entry])
+    ], ignore_index=True)
+    
+    save_data(st.session_state.df)
 
 # Add badge management functions
 def load_badges():
@@ -809,68 +832,145 @@ if st.session_state.admin:
     with current_tab[5]:
         st.subheader("Entry Management")
         
-        edit_date = st.date_input("Select Date to Edit", datetime.now(), key="entry_date")  # Added unique key
-        selected_name = st.selectbox(
-            "Select Participant", 
-            DEFAULT_PARTICIPANTS,
-            key="entry_participant"  # Added unique key
-        )
+        # Add tabs for adding new entries and editing existing ones
+        entry_tabs = st.tabs(["Add New Entry", "Edit Existing Entry"])
         
-        existing_entry = st.session_state.df[
-            (st.session_state.df['Date'] == pd.to_datetime(edit_date)) &
-            (st.session_state.df['Name'] == selected_name)
-        ]
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write("### Base Points")
-            base_points = {}
-            total_base = 0
-            for category, max_points in CATEGORIES.items():
-                current_val = existing_entry[category].values[0] if not existing_entry.empty else 0
-                base_points[category] = st.slider(
-                    f"{category} ({max_points})",
-                    0, max_points,
-                    value=int(current_val)
-                )
-                total_base += base_points[category]
-            
-            st.metric("Total Base Points", f"{total_base}/100")
-        
-        with col2:
-            st.write("### Bonus Points")
-            current_bonus = existing_entry['Bonus Points'].values[0] if not existing_entry.empty else 0
-            bonus_points = st.slider(
-                "Bonus Points", 0, MAX_BONUS,
-                value=int(current_val)
+        with entry_tabs[0]:
+            # Existing new entry code
+            edit_date = st.date_input("Select Date", datetime.now(), key="new_entry_date")
+            selected_name = st.selectbox(
+                "Select Participant", 
+                DEFAULT_PARTICIPANTS,
+                key="new_entry_participant"
             )
-            total_points = total_base + bonus_points
-            st.metric("Total Points", f"{total_points}/150")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write("### Base Points")
+                base_points = {}
+                total_base = 0
+                for category, max_points in CATEGORIES.items():
+                    base_points[category] = st.slider(
+                        f"{category} ({max_points})",
+                        0, max_points,
+                        key=f"new_{category}"
+                    )
+                    total_base += base_points[category]
+                
+                st.metric("Total Base Points", f"{total_base}/100")
+            
+            with col2:
+                st.write("### Bonus Points")
+                bonus_points = st.slider(
+                    "Bonus Points", 0, MAX_BONUS,
+                    key="new_bonus_points"
+                )
+                total_points = total_base + bonus_points
+                st.metric("Total Points", f"{total_points}/150")
+            
+            if st.button("Save Entry"):
+                new_entry = {
+                    'Name': selected_name,
+                    'Date': edit_date,
+                    'Month': pd.Period(edit_date, freq='M'),
+                    **base_points,
+                    'Base Points': total_base,
+                    'Bonus Points': bonus_points,
+                    'Total Points': total_points
+                }
+                
+                st.session_state.df = pd.concat([
+                    st.session_state.df,
+                    pd.DataFrame([new_entry])
+                ], ignore_index=True)
+                
+                save_data(st.session_state.df)
+                st.success("Entry saved successfully!")
         
-        if st.button("Save Entry"):
-            new_entry = {
-                'Name': selected_name,
-                'Date': edit_date,
-                'Month': pd.Period(edit_date, freq='M'),
-                **base_points,
-                'Base Points': total_base,
-                'Bonus Points': bonus_points,
-                'Total Points': total_points
-            }
+        with entry_tabs[1]:
+            # Edit existing entry
+            st.subheader("Edit Existing Entry")
             
-            # Remove existing entry if exists
-            st.session_state.df = st.session_state.df[
-                ~((st.session_state.df['Date'] == pd.to_datetime(edit_date)) &
-                  (st.session_state.df['Name'] == selected_name))
-            ]
-            
-            st.session_state.df = pd.concat([
-                st.session_state.df,
-                pd.DataFrame([new_entry])
-            ], ignore_index=True)
-            
-            save_data(st.session_state.df)
-            st.success("Entry saved successfully!")
+            # Date filter for existing entries
+            available_dates = pd.to_datetime(st.session_state.df['Date'].unique()).date
+            if len(available_dates) > 0:
+                selected_date = st.selectbox(
+                    "Select Date to Edit",
+                    sorted(available_dates, reverse=True),
+                    key="edit_entry_date"
+                )
+                
+                # Get entries for selected date
+                date_entries = st.session_state.df[
+                    st.session_state.df['Date'].dt.date == selected_date
+                ]
+                
+                if not date_entries.empty:
+                    selected_entry_name = st.selectbox(
+                        "Select Participant to Edit",
+                        date_entries['Name'].unique(),
+                        key="edit_entry_participant"
+                    )
+                    
+                    # Get the selected entry
+                    entry_to_edit = date_entries[date_entries['Name'] == selected_entry_name].iloc[0]
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write("### Base Points")
+                        base_points = {}
+                        total_base = 0
+                        for category, max_points in CATEGORIES.items():
+                            base_points[category] = st.slider(
+                                f"{category} ({max_points})",
+                                0, max_points,
+                                value=int(entry_to_edit[category]),
+                                key=f"edit_{category}"
+                            )
+                            total_base += base_points[category]
+                        
+                        st.metric("Total Base Points", f"{total_base}/100")
+                    
+                    with col2:
+                        st.write("### Bonus Points")
+                        bonus_points = st.slider(
+                            "Bonus Points", 0, MAX_BONUS,
+                            value=int(entry_to_edit['Bonus Points']),
+                            key="edit_bonus_points"
+                        )
+                        total_points = total_base + bonus_points
+                        st.metric("Total Points", f"{total_points}/150")
+                    
+                    if st.button("Update Entry"):
+                        # Remove existing entry
+                        st.session_state.df = st.session_state.df[
+                            ~((st.session_state.df['Date'].dt.date == selected_date) &
+                              (st.session_state.df['Name'] == selected_entry_name))
+                        ]
+                        
+                        # Add updated entry
+                        updated_entry = {
+                            'Name': selected_entry_name,
+                            'Date': selected_date,
+                            'Month': pd.Period(selected_date, freq='M'),
+                            **base_points,
+                            'Base Points': total_base,
+                            'Bonus Points': bonus_points,
+                            'Total Points': total_points
+                        }
+                        
+                        st.session_state.df = pd.concat([
+                            st.session_state.df,
+                            pd.DataFrame([updated_entry])
+                        ], ignore_index=True)
+                        
+                        save_data(st.session_state.df)
+                        st.success("Entry updated successfully!")
+                        st.rerun()
+                else:
+                    st.info("No entries found for selected date")
+            else:
+                st.info("No existing entries to edit")
 
 # Add badge management tab for admins
 if st.session_state.admin and len(current_tab) > 6:
@@ -902,22 +1002,3 @@ try:
         handle_js_message(st.query_params['Message'])
 except Exception as e:
     st.warning(f"Failed to process JS message: {e}")
-
-# Add helper function to update points
-def update_participant_points(participant, points):
-    current_date = datetime.now().date()
-    new_entry = {
-        'Name': participant,
-        'Date': current_date,
-        'Month': pd.Period(current_date, freq='M'),
-        'Base Points': 0,
-        'Bonus Points': points,
-        'Total Points': points
-    }
-    
-    st.session_state.df = pd.concat([
-        st.session_state.df,
-        pd.DataFrame([new_entry])
-    ], ignore_index=True)
-    
-    save_data(st.session_state.df)

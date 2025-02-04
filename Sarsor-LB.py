@@ -11,7 +11,7 @@ import base64
 from dotenv import load_dotenv  
 import matplotlib.pyplot as plt  
 
-st.set_page_config(page_title="Monthly Leaderboard", layout="wide")
+st.set_page_config(page_title="Sarsor Leaderboard", layout="wide")
 
 # Core configuration - Edit these values to customize the leaderboard
 DEFAULT_PARTICIPANTS = ['Sama', 'Nader', 'Desha', 'Sara', 'Youssef',
@@ -657,7 +657,7 @@ def handle_js_message(msg):
         st.session_state.show_admin_login = True
         st.rerun()
 
-st.title('📊 Monthly Cumulative Leaderboard')
+st.title('📊 Sarsor Cumulative Leaderboard')
 
 # Admin login handling
 if st.session_state.show_admin_login:

@@ -9,7 +9,7 @@ import json
 from PIL import Image
 import base64
 from dotenv import load_dotenv  
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt  
 
 st.set_page_config(page_title="Monthly Leaderboard", layout="wide")
 
@@ -39,10 +39,10 @@ CHALLENGES_FILE = 'challenges.json'
 # Security settings
 load_dotenv()
 
-# Replace hard-coded admin hash with environment variable
+# Ensure ADMIN_HASH is properly configured
 ADMIN_HASH = os.getenv('ADMIN_HASH')
 if not ADMIN_HASH:
-    raise ValueError("Admin  not configured. ")
+    raise ValueError("Admin hash not configured in environment variables")
 
 ADMIN_CODE = "admin"
 
@@ -108,10 +108,12 @@ def hash_password(password):
     """Hash password using SHA256"""
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
 
+# Improve verify_password with better error handling
 def verify_password(password):
-    """Secure password verification with rate limiting"""
     try:
-        # Add basic rate limiting using session state
+        if not password or not isinstance(password, str):
+            return False
+            
         current_time = datetime.now()
         if 'last_login_attempt' in st.session_state:
             time_diff = (current_time - st.session_state.last_login_attempt).total_seconds()
@@ -121,31 +123,36 @@ def verify_password(password):
         
         st.session_state.last_login_attempt = current_time
         return hashlib.sha256(password.encode('utf-8')).hexdigest() == ADMIN_HASH
-    except Exception:
-        st.error("Login error occurred")
+    except Exception as e:
+        st.error(f"Login error occurred: {str(e)}")
         return False
 
 # Data management
+# Improve error handling in load_data
 def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            # Add date format specification
+    try:
+        if os.path.exists(DATA_FILE):
             df = pd.read_csv(DATA_FILE, parse_dates=['Date'], dayfirst=True)
             
-            # Convert to datetime if needed
+            # Ensure required columns exist
+            required_columns = ['Name', 'Date', 'Month', 'Base Points', 'Bonus Points', 'Total Points'] + list(CATEGORIES.keys())
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
+            
+            # Convert date columns
             if not pd.api.types.is_datetime64_any_dtype(df['Date']):
                 df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
             
-            # Handle NaT values
+            # Remove invalid dates
             df = df.dropna(subset=['Date'])
             df['Month'] = df['Date'].dt.to_period('M')
             
             return df
-        except Exception as e:
-            st.error(f"Error loading data: {str(e)}")
-            return pd.DataFrame(columns=[
-                'Name', 'Date', 'Month', 'Base Points', 'Bonus Points', 'Total Points'
-            ] + list(CATEGORIES.keys()))
+    except Exception as e:
+        st.error(f"Error loading data: {str(e)}")
+    
+    # Return empty DataFrame with correct columns if loading fails
     return pd.DataFrame(columns=[
         'Name', 'Date', 'Month', 'Base Points', 'Bonus Points', 'Total Points'
     ] + list(CATEGORIES.keys()))
@@ -610,18 +617,23 @@ def admin_challenge_interface(challenge_system):
             st.info("No challenges to manage")
 
 # Important: Session state initialization
-if 'df' not in st.session_state:
-    st.session_state.df = load_data()
-if 'admin' not in st.session_state:
-    st.session_state.admin = False
-if 'show_admin_login' not in st.session_state:
-    st.session_state.show_admin_login = False
+# Initialize session state more robustly
+def initialize_session_state():
+    if 'df' not in st.session_state:
+        st.session_state.df = load_data()
+    if 'admin' not in st.session_state:
+        st.session_state.admin = False
+    if 'show_admin_login' not in st.session_state:
+        st.session_state.show_admin_login = False
+    if 'achievement_system' not in st.session_state:
+        st.session_state.achievement_system = AchievementSystem()
+    if 'challenge_system' not in st.session_state:
+        st.session_state.challenge_system = ChallengeSystem()
+    if 'last_login_attempt' not in st.session_state:
+        st.session_state.last_login_attempt = datetime.min
 
-# Initialize systems after session state initialization
-if 'achievement_system' not in st.session_state:
-    st.session_state.achievement_system = AchievementSystem()
-if 'challenge_system' not in st.session_state:
-    st.session_state.challenge_system = ChallengeSystem()
+# Call initialization at startup
+initialize_session_state()
 
 # Initialize user session state
 if 'user' not in st.session_state:

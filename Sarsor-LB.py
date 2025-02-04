@@ -3,23 +3,21 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import os
-import hashlib  # Add at top with other imports
+import hashlib  
 import streamlit.components.v1 as components
 import json
 from PIL import Image
 import base64
-from dotenv import load_dotenv  # Add this import
-import matplotlib.pyplot as plt  # Add this import
+from dotenv import load_dotenv  
+import matplotlib.pyplot as plt  
 
 st.set_page_config(page_title="Monthly Leaderboard", layout="wide")
 
-# Core configuration - Edit these values to customize the leaderboard
 DEFAULT_PARTICIPANTS = ['Sama', 'Nader', 'Desha', 'Sara', 'Youssef',
                        'Menna', 'Gasser', 'Hams', 'Rowan', 'Nada', 'Khaled']
 MAX_DAILY_BASE = 100
 MAX_BONUS = 50
 
-# Performance categories and their maximum points
 CATEGORIES = {
     'Academic Performance': 30,
     'Project Task Completion': 25,
@@ -28,7 +26,6 @@ CATEGORIES = {
     'Presentation and Communication': 10
 }
 
-# File paths for data storage
 DATA_FILE = 'leaderboard_data.csv'
 BADGES_FILE = 'badges.json'
 PARTICIPANT_BADGES_FILE = 'participant_badges.json'

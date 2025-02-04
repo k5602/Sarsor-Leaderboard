@@ -132,27 +132,15 @@ def verify_password(password):
 def load_data():
     try:
         if os.path.exists(DATA_FILE):
-            df = pd.read_csv(DATA_FILE, parse_dates=['Date'], dayfirst=True)
-            
-            # Ensure required columns exist
-            required_columns = ['Name', 'Date', 'Month', 'Base Points', 'Bonus Points', 'Total Points'] + list(CATEGORIES.keys())
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
-            
-            # Convert date columns
-            if not pd.api.types.is_datetime64_any_dtype(df['Date']):
-                df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-            
-            # Remove invalid dates
-            df = df.dropna(subset=['Date'])
-            df['Month'] = df['Date'].dt.to_period('M')
-            
+            df = pd.read_csv(DATA_FILE)
+            # Ensure date column is properly converted to datetime
+            df['Date'] = pd.to_datetime(df['Date'])
+            df['Month'] = pd.to_datetime(df['Date']).dt.to_period('M')
             return df
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
     
-    # Return empty DataFrame with correct columns if loading fails
+    # Return empty DataFrame with correct columns
     return pd.DataFrame(columns=[
         'Name', 'Date', 'Month', 'Base Points', 'Bonus Points', 'Total Points'
     ] + list(CATEGORIES.keys()))
@@ -925,7 +913,8 @@ if st.session_state.admin:
             st.subheader("Edit Existing Entry")
             
             # Date filter for existing entries
-            available_dates = pd.to_datetime(st.session_state.df['Date'].unique()).date
+            # Convert dates properly
+            available_dates = pd.to_datetime(st.session_state.df['Date']).dt.date.unique()
             if len(available_dates) > 0:
                 selected_date = st.selectbox(
                     "Select Date to Edit",
@@ -933,9 +922,9 @@ if st.session_state.admin:
                     key="edit_entry_date"
                 )
                 
-                # Get entries for selected date
+                # Get entries for selected date - fixed date comparison
                 date_entries = st.session_state.df[
-                    st.session_state.df['Date'].dt.date == selected_date
+                    pd.to_datetime(st.session_state.df['Date']).dt.date == selected_date
                 ]
                 
                 if not date_entries.empty:

@@ -44,7 +44,7 @@ ADMIN_HASH = os.getenv('ADMIN_HASH')
 if not ADMIN_HASH:
     raise ValueError("Admin hash not configured in environment variables")
 
-ADMIN_CODE = "admin"
+ADMIN_CODE = "leibniz"
 
 # Add badge constants and configurations
 BADGES = {

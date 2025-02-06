@@ -10,16 +10,14 @@ from PIL import Image
 import base64
 from dotenv import load_dotenv  
 import matplotlib.pyplot as plt  
-
+import time
 st.set_page_config(page_title="Monthly Leaderboard", layout="wide")
 
-# Core configuration - Edit these values to customize the leaderboard
 DEFAULT_PARTICIPANTS = ['Sama', 'Nader', 'Desha', 'Sara', 'Youssef',
                        'Menna', 'Gasser', 'Hams', 'Rowan', 'Nada', 'Khaled']
 MAX_DAILY_BASE = 100
 MAX_BONUS = 50
 
-# Performance categories and their maximum points
 CATEGORIES = {
     'Academic Performance': 30,
     'Project Task Completion': 25,
@@ -28,7 +26,6 @@ CATEGORIES = {
     'Presentation and Communication': 10
 }
 
-# File paths for data storage
 DATA_FILE = 'leaderboard_data.csv'
 BADGES_FILE = 'badges.json'
 PARTICIPANT_BADGES_FILE = 'participant_badges.json'
@@ -36,10 +33,8 @@ ACHIEVEMENT_FILE = 'achievements.json'
 STREAKS_FILE = 'streaks.json'
 CHALLENGES_FILE = 'challenges.json'
 
-# Security settings
 load_dotenv()
 
-# Ensure ADMIN_HASH is properly configured
 ADMIN_HASH = os.getenv('ADMIN_HASH')
 if not ADMIN_HASH:
     raise ValueError("Admin hash not configured in environment variables")

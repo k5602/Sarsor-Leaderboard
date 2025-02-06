@@ -11,7 +11,7 @@ import base64
 from dotenv import load_dotenv  
 import matplotlib.pyplot as plt  
 
-st.set_page_config(page_title="Sarsor Leaderboard", layout="wide")
+st.set_page_config(page_title="Monthly Leaderboard", layout="wide")
 
 # Core configuration - Edit these values to customize the leaderboard
 DEFAULT_PARTICIPANTS = ['Sama', 'Nader', 'Desha', 'Sara', 'Youssef',
@@ -44,7 +44,7 @@ ADMIN_HASH = os.getenv('ADMIN_HASH')
 if not ADMIN_HASH:
     raise ValueError("Admin hash not configured in environment variables")
 
-ADMIN_CODE = "leibniz"
+ADMIN_CODE = "admin"
 
 # Add badge constants and configurations
 BADGES = {
@@ -657,7 +657,7 @@ def handle_js_message(msg):
         st.session_state.show_admin_login = True
         st.rerun()
 
-st.title('📊 Sarsor Cumulative Leaderboard')
+st.title('📊 Monthly Cumulative Leaderboard')
 
 # Admin login handling
 if st.session_state.show_admin_login:
@@ -930,85 +930,110 @@ if st.session_state.admin:
             # Edit existing entry
             st.subheader("Edit Existing Entry")
             
-            # Ensure dates are properly converted to datetime
-            st.session_state.df['Date'] = pd.to_datetime(st.session_state.df['Date'])
-            available_dates = st.session_state.df['Date'].dt.date.unique()
-            
-            if len(available_dates) > 0:
-                selected_date = st.selectbox(
-                    "Select Date to Edit",
-                    sorted(available_dates, reverse=True),
-                    key="edit_entry_date"
+            # Convert dates properly and create unique entries list
+            try:
+                # Ensure Date column is datetime
+                st.session_state.df['Date'] = pd.to_datetime(st.session_state.df['Date'])
+                
+                # Get unique dates and sort them
+                available_dates = sorted(
+                    st.session_state.df['Date'].dt.date.unique(),
+                    reverse=True
                 )
                 
-                date_entries = st.session_state.df[
-                    st.session_state.df['Date'].dt.date == selected_date
-                ]
-                
-                if not date_entries.empty:
-                    selected_entry_name = st.selectbox(
-                        "Select Participant to Edit",
-                        date_entries['Name'].unique(),
-                        key="edit_entry_participant"
+                if available_dates:
+                    selected_date = st.selectbox(
+                        "Select Date to Edit",
+                        available_dates,
+                        key="edit_entry_date"
                     )
                     
-                    # Get the selected entry
-                    entry_to_edit = date_entries[date_entries['Name'] == selected_entry_name].iloc[0]
+                    # Filter entries for selected date
+                    mask = st.session_state.df['Date'].dt.date == selected_date
+                    date_entries = st.session_state.df[mask].copy()
                     
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.write("### Base Points")
-                        base_points = {}
-                        total_base = 0
-                        for category, max_points in CATEGORIES.items():
-                            base_points[category] = st.slider(
-                                f"{category} ({max_points})",
-                                0, max_points,
-                                value=int(entry_to_edit[category]),
-                                key=f"edit_{category}"
-                            )
-                            total_base += base_points[category]
-                        
-                        st.metric("Total Base Points", f"{total_base}/100")
-                    
-                    with col2:
-                        st.write("### Bonus Points")
-                        bonus_points = st.slider(
-                            "Bonus Points", 0, MAX_BONUS,
-                            value=int(entry_to_edit['Bonus Points']),
-                            key="edit_bonus_points"
+                    if not date_entries.empty:
+                        selected_entry_name = st.selectbox(
+                            "Select Participant to Edit",
+                            sorted(date_entries['Name'].unique()),
+                            key="edit_entry_participant"
                         )
-                        total_points = total_base + bonus_points
-                        st.metric("Total Points", f"{total_points}/150")
-                    
-                    if st.button("Update Entry"):
-                        # Remove existing entry using proper date comparison
-                        mask = (st.session_state.df['Date'].dt.date == selected_date) & (st.session_state.df['Name'] == selected_entry_name)
-                        st.session_state.df = st.session_state.df[~mask]
                         
-                        # Add updated entry
-                        updated_entry = {
-                            'Name': selected_entry_name,
-                            'Date': pd.to_datetime(selected_date),  # Convert to datetime
-                            'Month': pd.Period(selected_date, freq='M'),
-                            **base_points,
-                            'Base Points': total_base,
-                            'Bonus Points': bonus_points,
-                            'Total Points': total_points
-                        }
-                        
-                        st.session_state.df = pd.concat([
-                            st.session_state.df,
-                            pd.DataFrame([updated_entry])
-                        ], ignore_index=True)
-                        
-                        save_data(st.session_state.df)
-                        st.success("Entry updated successfully!")
-                        st.rerun()
+                        # Get the selected entry
+                        entry_mask = (date_entries['Name'] == selected_entry_name)
+                        if entry_mask.any():
+                            entry_to_edit = date_entries[entry_mask].iloc[0]
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write("### Base Points")
+                                base_points = {}
+                                total_base = 0
+                                for category, max_points in CATEGORIES.items():
+                                    current_value = int(entry_to_edit.get(category, 0))
+                                    base_points[category] = st.slider(
+                                        f"{category} ({max_points})",
+                                        0, max_points,
+                                        value=current_value,
+                                        key=f"edit_{category}"
+                                    )
+                                    total_base += base_points[category]
+                                
+                                st.metric("Total Base Points", f"{total_base}/100")
+                            
+                            with col2:
+                                st.write("### Bonus Points")
+                                bonus_points = st.slider(
+                                    "Bonus Points", 0, MAX_BONUS,
+                                    value=int(entry_to_edit.get('Bonus Points', 0)),
+                                    key="edit_bonus_points"
+                                )
+                                total_points = total_base + bonus_points
+                                st.metric("Total Points", f"{total_points}/150")
+                            
+                            if st.button("Update Entry"):
+                                try:
+                                    # Remove existing entry
+                                    remove_mask = ~((st.session_state.df['Date'].dt.date == selected_date) & 
+                                                 (st.session_state.df['Name'] == selected_entry_name))
+                                    st.session_state.df = st.session_state.df[remove_mask]
+                                    
+                                    # Create updated entry
+                                    updated_entry = {
+                                        'Name': selected_entry_name,
+                                        'Date': pd.to_datetime(selected_date),
+                                        'Month': pd.Period(selected_date, freq='M'),
+                                        **base_points,
+                                        'Base Points': total_base,
+                                        'Bonus Points': bonus_points,
+                                        'Total Points': total_points
+                                    }
+                                    
+                                    # Add the updated entry
+                                    st.session_state.df = pd.concat([
+                                        st.session_state.df,
+                                        pd.DataFrame([updated_entry])
+                                    ], ignore_index=True)
+                                    
+                                    # Save the updated dataframe
+                                    save_data(st.session_state.df)
+                                    st.success("Entry updated successfully!")
+                                    
+                                    # Force rerun to refresh the display
+                                    time.sleep(1)  # Small delay to ensure save completes
+                                    st.rerun()
+                                    
+                                except Exception as e:
+                                    st.error(f"Error updating entry: {str(e)}")
+                        else:
+                            st.warning("Selected entry not found")
+                    else:
+                        st.info("No entries found for selected date")
                 else:
-                    st.info("No entries found for selected date")
-            else:
-                st.info("No existing entries to edit")
+                    st.info("No existing entries to edit")
+                    
+            except Exception as e:
+                st.error(f"Error loading entries: {str(e)}")
 
 # Add badge management tab for admins
 if st.session_state.admin and len(current_tab) > 6:

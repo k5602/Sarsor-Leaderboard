@@ -3,18 +3,18 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import os
-import hashlib  
+import hashlib
 import streamlit.components.v1 as components
 import json
 from PIL import Image
 import base64
-from dotenv import load_dotenv  
-import matplotlib.pyplot as plt  
+from dotenv import load_dotenv
+import matplotlib.pyplot as plt
 import time
 st.set_page_config(page_title="Monthly Leaderboard", layout="wide")
 
-DEFAULT_PARTICIPANTS = ['Sama', 'Nader', 'Desha', 'Sara', 'Youssef',
-                       'Menna', 'Gasser', 'Hams', 'Rowan', 'Nada', 'Khaled']
+DEFAULT_PARTICIPANTS = ['Eman', 'Nader', 'Desha','Youssef',
+                       'Menna', 'Gasser', 'Hager', 'Sondos', 'Schrödinger', 'Khaled']
 MAX_DAILY_BASE = 100
 MAX_BONUS = 50
 
@@ -30,7 +30,7 @@ DATA_FILE = 'leaderboard_data.csv'
 BADGES_FILE = 'badges.json'
 PARTICIPANT_BADGES_FILE = 'participant_badges.json'
 ACHIEVEMENT_FILE = 'achievements.json'
-STREAKS_FILE = 'streaks.json'
+STREAKS_FILE = 'streaks_data.json'
 CHALLENGES_FILE = 'challenges.json'
 
 load_dotenv()
@@ -108,14 +108,14 @@ def verify_password(password):
     try:
         if not password or not isinstance(password, str):
             return False
-            
+
         current_time = datetime.now()
         if 'last_login_attempt' in st.session_state:
             time_diff = (current_time - st.session_state.last_login_attempt).total_seconds()
             if time_diff < 2:  # 2 second delay between attempts
                 st.error("Please wait before trying again")
                 return False
-        
+
         st.session_state.last_login_attempt = current_time
         return hashlib.sha256(password.encode('utf-8')).hexdigest() == ADMIN_HASH
     except Exception as e:
@@ -134,7 +134,7 @@ def load_data():
             return df
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
-    
+
     # Return empty DataFrame with correct columns
     return pd.DataFrame(columns=[
         'Name', 'Date', 'Month', 'Base Points', 'Bonus Points', 'Total Points'
@@ -171,13 +171,14 @@ def update_participant_points(participant, points):
         'Total Points': points,
         **{k: 0 for k in CATEGORIES}  # Add CATEGORIES fields with default 0
     }
-    
+
     st.session_state.df = pd.concat([
         st.session_state.df,
         pd.DataFrame([new_entry])
     ], ignore_index=True)
-    
+
     save_data(st.session_state.df)
+    trigger_milestone_and_streak_checks(participant)
 
 # Add badge management functions
 def load_badges():
@@ -215,12 +216,12 @@ def show_confetti():
 # Add display functions
 def display_leaderboard(cumulative_df, badges_data):
     cols = st.columns([3, 1])
-    
+
     with cols[0]:
         if not cumulative_df.empty:
             # Ensure all required columns exist
             display_df = cumulative_df[['Name', 'Rank', 'Base Points', 'Bonus Points', 'Total Points']]
-            
+
             st.dataframe(
                 display_df.style
                 .background_gradient(subset=['Total Points'], cmap='YlGn')
@@ -230,7 +231,7 @@ def display_leaderboard(cumulative_df, badges_data):
             )
         else:
             st.info("No data to display")
-    
+
     with cols[1]:
         st.markdown("### 🏅 Top 3 Performers")
         top_3 = cumulative_df.head(3)
@@ -246,20 +247,20 @@ def display_leaderboard(cumulative_df, badges_data):
 def badge_management():
     st.markdown("### 🏅 Badge Management")
     badges_data = load_badges()
-    
+
     tabs = st.tabs(["Award/Remove Badges", "Apply Punishment", "Current Badges"])
-    
+
     with tabs[0]:
         mode = st.radio("Mode", ["Award Badge", "Remove Badge"], key="badge_mode")
         selected_participant = st.selectbox(
-            "Select Participant", 
+            "Select Participant",
             DEFAULT_PARTICIPANTS,
             key="badge_mgmt_participant"
         )
-        
+
         if mode == "Award Badge":
             selected_badge = st.selectbox(
-                "Select Badge", 
+                "Select Badge",
                 list(BADGES.keys()),
                 key="badge_mgmt_type"
             )
@@ -286,7 +287,7 @@ def badge_management():
                     st.success(f"Badge removed from {selected_participant}")
             else:
                 st.info("No badges to remove for this participant")
-    
+
     with tabs[1]:
         st.markdown("### ⚠️ Apply Punishment")
         punishment_participant = st.selectbox(
@@ -303,7 +304,7 @@ def badge_management():
             points = PUNISHMENT_BADGES[punishment_type]
             update_participant_points(punishment_participant, points)
             st.success(f"Applied {punishment_type} ({points} points) to {punishment_participant}")
-    
+
     with tabs[2]:
         st.markdown("### Current Badges")
         for participant, badges in badges_data.items():
@@ -313,27 +314,27 @@ def badge_management():
 def display_badge_analytics(badges_data):
     # ...existing analytics code...
     st.markdown("### 🏅 Badge Statistics")
-    
+
     if badges_data:
         badge_counts = {}
         for badges in badges_data.values():
             for badge in badges:
                 badge_counts[badge] = badge_counts.get(badge, 0) + 1
-        
+
         badge_df = pd.DataFrame(list(badge_counts.items()), columns=['Badge', 'Count'])
         fig = px.bar(badge_df, x='Badge', y='Count', title='Badge Distribution')
         st.plotly_chart(fig, use_container_width=True)
-        
+
         st.markdown("### 👑 Top Badge Earners")
         earner_counts = {participant: len(badges) for participant, badges in badges_data.items()}
         earner_df = pd.DataFrame(list(earner_counts.items()), columns=['Participant', 'Badges'])
         earner_df = earner_df.sort_values('Badges', ascending=False).head(5)
-        
+
         for _, row in earner_df.iterrows():
             st.markdown(f"**{row['Participant']}**: {row['Badges']} badges")
             if row['Participant'] in badges_data:
                 st.markdown(" ".join(badges_data[row['Participant']]))
-
+                
 # Add new constants after existing constants
 BADGE_LEVELS = {
     "bronze": "🥉",
@@ -391,6 +392,20 @@ PUNISHMENT_BADGES = {
     "⚠️ Minor Warning": -10,
     "❌ Major Warning": -20,
     "💀 Critical Warning": -30
+}
+
+MILESTONE_TIERS = {
+    'First 1000': 1000,
+    '5000 Club': 5000,
+    '10000 Master': 10000,
+    '25000 Legend': 25000
+}
+
+STREAK_BADGES = {
+    3: '🔥 3-Day Streak',
+    7: '🔥 Week Warrior',
+    14: '🔥 Fortnight Fighter',
+    30: '🔥 Monthly Master'
 }
 
 # Add class definitions after constants
@@ -500,122 +515,81 @@ class ChallengeSystem:
             return True
         return False
 
-# Add new display functions
-def display_achievements(achievement_system, participant):
-    st.markdown(f"### 🏆 Achievements for {participant}")
-    if participant in achievement_system.data:
-        for category, achievements in achievement_system.data[participant].items():
-            st.markdown(f"#### {achievement_system.badge_categories[category]} {category.capitalize()}")
-            for achievement, count in achievements.items():
-                level = next((lvl for lvl, req in achievement_system.badge_levels.items() if count >= req), None)
-                if level:
-                    st.markdown(f"- {achievement_system.badge_levels[level]} {achievement} ({count})")
-    else:
-        st.markdown("No achievements yet.")
+# Add new functions for streaks and milestones
+def load_streaks_data():
+    try:
+        with open(STREAKS_FILE, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {"participants": {}, "milestones_awarded": {}}
 
-def display_challenges(challenge_system):
-    st.markdown("### ⚔️ Active Challenges")
-    for challenge_name, challenge in challenge_system.challenges.items():
-        st.markdown(f"#### {challenge_name}")
-        st.markdown(f"- **Description**: {challenge['description']}")
-        st.markdown(f"- **Participants**: {', '.join(challenge.get('participants', []))}")
+def save_streaks_data(streaks_data):
+    with open(STREAKS_FILE, 'w') as f:
+        json.dump(streaks_data, f, indent=2)
 
-def check_warning_badges(participant_data, historical_data):
-    warnings = []
-    if participant_data['Rank'] >= len(DEFAULT_PARTICIPANTS) - 1:
-        warnings.append(WARNING_BADGES["⚠️ Performance Alert"])
-    
-    # Convert historical data to list and ensure proper date sorting
-    if isinstance(historical_data, pd.DataFrame):
-        historical_points = historical_data['Total Points'].tolist()
-    else:
-        historical_points = [d['Total Points'] for d in historical_data]
-    
-    if len(historical_points) >= 3:
-        # Check for declining trend in the last 3 entries
-        if all(historical_points[i] > historical_points[i+1] for i in range(len(historical_points)-3, len(historical_points)-1)):
-            warnings.append(WARNING_BADGES["📉 Declining Trend"])
-    
-    if participant_data['Total Points'] < 50:
-        warnings.append(WARNING_BADGES["❌ Missed Goals"])
-    return warnings
+def check_milestones(participant_name):
+    streaks_data = load_streaks_data()
+    milestones = streaks_data.get('milestones_awarded', {})
+    awarded = milestones.get(participant_name, [])
+    total_points = st.session_state.df[st.session_state.df['Name'] == participant_name]['Total Points'].sum()
+    new_badges = []
+    for tier, threshold in MILESTONE_TIERS.items():
+        if total_points >= threshold and tier not in awarded:
+            award_badge(participant_name, tier)
+            new_badges.append(tier)
+            awarded.append(tier)
+    if new_badges:
+        milestones[participant_name] = awarded
+        streaks_data['milestones_awarded'] = milestones
+        save_streaks_data(streaks_data)
+    return new_badges
 
-def display_advanced_analytics(achievement_system, challenge_system):
-    st.markdown("### 🏆 Achievement Analytics")
-    achievement_counts = {}
-    for participant, categories in achievement_system.data.items():
-        for category, achievements in categories.items():
-            for achievement, count in achievements.items():
-                if achievement not in achievement_counts:
-                    achievement_counts[achievement] = 0
-                achievement_counts[achievement] += count
-    achievement_df = pd.DataFrame(list(achievement_counts.items()), columns=['Achievement', 'Count'])
-    fig = px.bar(achievement_df, x='Achievement', y='Count', title='Achievement Distribution')
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("### ⚔️ Challenge Analytics")
-    challenge_counts = {name: len(challenge.get('participants', [])) for name, challenge in challenge_system.challenges.items()}
-    challenge_df = pd.DataFrame(list(challenge_counts.items()), columns=['Challenge', 'Participants'])
-    fig = px.bar(challenge_df, x='Challenge', y='Participants', title='Challenge Participation')
-    st.plotly_chart(fig, use_container_width=True)
-
-def admin_challenge_interface(challenge_system):
-    st.markdown("### ⚔️ Manage Challenges")
-    
-    tabs = st.tabs(["Create Challenge", "Review Requests", "Manage Challenges"])
-    
-    with tabs[0]:
-        challenge_name = st.text_input("Challenge Name")
-        challenge_description = st.text_area("Challenge Description")
-        bonus_points = st.number_input("Bonus Points", min_value=0, max_value=50)
-        if st.button("Add Challenge"):
-            challenge_system.add_challenge({
-                "name": challenge_name,
-                "description": challenge_description,
-                "bonus_points": bonus_points
-            })
-            st.success("Challenge added!")
-    
-    with tabs[1]:
-        for challenge_name, requests in challenge_system.pending_requests.items():
-            if requests:
-                st.markdown(f"#### {challenge_name}")
-                for participant in requests:
-                    col1, col2, col3 = st.columns([2, 1, 1])
-                    with col1:
-                        st.write(participant)
-                    with col2:
-                        points = st.number_input(
-                            "Points",
-                            min_value=0,
-                            max_value=50,
-                            key=f"points_{challenge_name}_{participant}"
-                        )
-                    with col3:
-                        if st.button("Approve", key=f"approve_{challenge_name}_{participant}"):
-                            if challenge_system.approve_request(participant, challenge_name, points):
-                                # Update participant's points in the database
-                                update_participant_points(participant, points)
-                                st.success("Request approved and points awarded!")
-                        if st.button("Reject", key=f"reject_{challenge_name}_{participant}"):
-                            if challenge_system.reject_request(participant, challenge_name):
-                                st.success("Request rejected!")
-    
-    with tabs[2]:
-        st.markdown("### Remove Challenges")
-        if challenge_system.challenges:
-            for challenge_name, challenge in challenge_system.challenges.items():
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.markdown(f"**{challenge_name}**")
-                    st.markdown(f"_{challenge.get('description', 'No description')}_")
-                with col2:
-                    if st.button("Remove", key=f"remove_{challenge_name}"):
-                        if challenge_system.remove_challenge(challenge_name):
-                            st.success(f"Challenge '{challenge_name}' removed!")
-                            st.rerun()
+def check_streaks(participant_name):
+    streaks_data = load_streaks_data()
+    p = streaks_data['participants'].get(participant_name, {
+        'current_streak': 0,
+        'longest_streak': 0,
+        'last_activity_date': None
+    })
+    df = st.session_state.df[st.session_state.df['Name'] == participant_name]
+    if df.empty:
+        return []
+    dates = pd.to_datetime(df['Date']).dt.date.sort_values(ascending=False).unique()
+    if len(dates) == 0:
+        return []
+    today = datetime.now().date()
+    streak = 0
+    last_date = None
+    for d in dates:
+        if last_date is None:
+            if (today - d).days > 1:
+                break
+            streak = 1
+            last_date = d
         else:
-            st.info("No challenges to manage")
+            if (last_date - d).days == 1:
+                streak += 1
+                last_date = d
+            else:
+                break
+    p['current_streak'] = streak
+    p['longest_streak'] = max(p.get('longest_streak', 0), streak)
+    p['last_activity_date'] = str(dates[0])
+    streaks_data['participants'][participant_name] = p
+    save_streaks_data(streaks_data)
+    new_badges = []
+    for days, badge in STREAK_BADGES.items():
+        if streak >= days and badge not in get_badges(participant_name):
+            award_badge(participant_name, badge)
+            new_badges.append(badge)
+    return new_badges
+
+def trigger_milestone_and_streak_checks(participant_name):
+    new_milestones = check_milestones(participant_name)
+    new_streaks = check_streaks(participant_name)
+    if new_milestones or new_streaks:
+        show_confetti()
+        st.experimental_rerun()
 
 # Important: Session state initialization
 # Initialize session state more robustly
@@ -676,35 +650,36 @@ if st.session_state.admin:
 # Main tabs
 tabs = ["🏅 Leaderboard", "📈 Analytics", "🎖️ Badges", "🏆 Achievements", "⚔️ Challenges"]
 if st.session_state.admin:
+    tabs.insert(1, "📊 Admin Dashboard")  # Insert after Leaderboard
     tabs += ["➕✏️ Add/Edit Entries", "🏅 Manage Badges", "⚔️ Manage Challenges"]
-    
+
 current_tab = st.tabs(tabs)
 
 def calculate_cumulative_points(df, current_month):
     try:
         # Create a copy of the dataframe to avoid modifications to original
         df = df.copy()
-        
+
         # Ensure Date column is datetime with flexible parsing
         df['Date'] = pd.to_datetime(df['Date'], format='mixed')
-        
+
         # Convert current_month to Period if needed
         if isinstance(current_month, str):
             current_month = pd.Period(current_month)
-        
+
         # Filter for current month
         monthly_df = df[df['Month'] == current_month].copy()
-        
+
         if monthly_df.empty:
             return pd.DataFrame(columns=['Name', 'Rank', 'Base Points', 'Bonus Points', 'Total Points'])
-        
+
         # Calculate daily totals
         daily_totals = monthly_df.groupby(['Name', 'Date']).agg({
             'Base Points': 'last',
             'Bonus Points': 'last',
             'Total Points': 'sum'
         }).reset_index()
-        
+
         # Calculate cumulative totals
         cumulative_points = {}
         for _, row in daily_totals.iterrows():
@@ -717,56 +692,84 @@ def calculate_cumulative_points(df, current_month):
                     'Total Points': 0
                 }
             cumulative_points[name]['Total Points'] += row['Total Points']
-        
+
         # Convert to DataFrame
         cumulative_df = pd.DataFrame.from_dict(cumulative_points, orient='index').reset_index(drop=True)
-        
+
         # Ensure all required columns exist
         required_columns = ['Name', 'Base Points', 'Bonus Points', 'Total Points']
         for col in required_columns:
             if col not in cumulative_df.columns:
                 cumulative_df[col] = 0
-        
+
         # Calculate ranks
         cumulative_df['Rank'] = cumulative_df['Total Points'].rank(method='min', ascending=False).astype(int)
-        
+
         return cumulative_df[['Name', 'Rank', 'Base Points', 'Bonus Points', 'Total Points']].sort_values('Rank')
-    
+
     except Exception as e:
         st.error(f"Error calculating points: {str(e)}")
         return pd.DataFrame(columns=['Name', 'Rank', 'Base Points', 'Bonus Points', 'Total Points'])
 
-with current_tab[0]:
-    current_month = datetime.now().strftime('%Y-%m')
+def get_filtered_dataframe(df, filter_mode):
+    today = datetime.now().date()
+    if filter_mode == 'This Week':
+        week_ago = today - pd.Timedelta(days=6)
+        mask = pd.to_datetime(df['Date']).dt.date.between(week_ago, today)
+        return df[mask]
+    elif filter_mode == 'This Month':
+        month_start = today.replace(day=1)
+        mask = pd.to_datetime(df['Date']).dt.date >= month_start
+        return df[mask]
+    else:
+        return df
+
+def calculate_filtered_leaderboard(df, filter_mode):
+    filtered = get_filtered_dataframe(df, filter_mode)
+    return calculate_cumulative_points(filtered)
+
+with current_tab[0]:  # Leaderboard tab
+    if 'leaderboard_filter' not in st.session_state:
+        st.session_state.leaderboard_filter = 'This Month'
+    filter_mode = st.radio(
+        "Time Period:",
+        ["This Month", "This Week", "All Time"],
+        index=["This Month", "This Week", "All Time"].index(st.session_state.leaderboard_filter),
+        horizontal=True,
+        key="leaderboard_time_filter"
+    )
+    st.session_state.leaderboard_filter = filter_mode
     if not st.session_state.df.empty:
-        cumulative_df = calculate_cumulative_points(st.session_state.df, current_month)
-        st.subheader(f"Monthly Leaderboard - {current_month}")
+        cumulative_df = calculate_filtered_leaderboard(st.session_state.df, filter_mode)
+        st.subheader(f"Leaderboard - {filter_mode}")
         badges_data = load_badges()
         display_leaderboard(cumulative_df, badges_data)
-        
+
         for _, participant_data in cumulative_df.iterrows():
             # Ensure proper date handling for historical data
             historical_data = st.session_state.df[
                 st.session_state.df['Name'] == participant_data['Name']
             ].copy()
-            
+
             # Convert Date column to datetime if it isn't already
             if 'Date' in historical_data.columns:
                 historical_data['Date'] = pd.to_datetime(historical_data['Date'])
                 historical_data = historical_data.sort_values('Date', ascending=False)
-            
+
             warning_badges = check_warning_badges(participant_data, historical_data)
             if warning_badges:
                 with st.expander(f"⚠️ Warnings for {participant_data['Name']}"):
                     for warning in warning_badges:
                         st.markdown(f"- {warning}")
 
-with current_tab[1]:
+# Determine correct tab index for Analytics
+analytics_tab_index = 2 if st.session_state.admin else 1
+with current_tab[analytics_tab_index]:
     st.subheader("Monthly Analytics")
-    
+
     current_month = datetime.now().strftime('%Y-%m')
     monthly_df = st.session_state.df[st.session_state.df['Month'] == current_month]
-    
+
     if not monthly_df.empty:
         col1, col2 = st.columns(2)
         with col1:
@@ -779,7 +782,7 @@ with current_tab[1]:
                 markers=True
             )
             st.plotly_chart(fig, use_container_width=True)
-        
+
         with col2:
             st.write("### Points Composition")
             fig = px.sunburst(
@@ -789,35 +792,38 @@ with current_tab[1]:
                 color='Base Points'
             )
             st.plotly_chart(fig, use_container_width=True)
-        
+
         badges_data = load_badges()
         display_badge_analytics(badges_data)
         display_advanced_analytics(st.session_state.achievement_system, st.session_state.challenge_system)
     else:
         st.warning("No data to display")
 
-with current_tab[2]:
+badges_tab_index = 3 if st.session_state.admin else 2
+with current_tab[badges_tab_index]:
     badges_data = load_badges()
     st.markdown("### 🏅 Available Badges")
-    
+
     for badge, description in BADGES.items():
         st.markdown(f"**{badge}**: {description}")
-    
+
     st.markdown("### 🏆 Awarded Badges")
     for participant, badges in badges_data.items():
         if badges:
             st.markdown(f"**{participant}**:")
             st.markdown(" ".join(badges))
 
-with current_tab[3]:  # Achievements tab
+achievements_tab_index = 4 if st.session_state.admin else 3
+with current_tab[achievements_tab_index]:  # Achievements tab
     selected_participant = st.selectbox(
-        "Select Participant", 
+        "Select Participant",
         DEFAULT_PARTICIPANTS,
         key="achievement_view_participant"  # Added unique key
     )
     display_achievements(st.session_state.achievement_system, selected_participant)
 
-with current_tab[4]:  # Challenges tab
+challenges_tab_index = 5 if st.session_state.admin else 4
+with current_tab[challenges_tab_index]:  # Challenges tab
     if not st.session_state.admin:
         # User selector at the top of challenges tab
         selected_user = st.selectbox(
@@ -826,14 +832,14 @@ with current_tab[4]:  # Challenges tab
             key="challenge_user_select"
         )
         st.session_state.user = selected_user
-    
+
     st.markdown("### ⚔️ Active Challenges")
     if st.session_state.challenge_system.challenges:
         for challenge_name, challenge in st.session_state.challenge_system.challenges.items():
             with st.expander(f"📌 {challenge_name}"):
                 st.markdown(f"**Description**: {challenge.get('description', 'No description')}")
                 st.markdown(f"**Bonus Points**: {challenge.get('bonus_points', 0)}")
-                
+
                 # Show participants and pending requests
                 st.markdown("**Current Participants:**")
                 participants = challenge.get('participants', [])
@@ -842,14 +848,14 @@ with current_tab[4]:  # Challenges tab
                         st.markdown(f"- {participant}")
                 else:
                     st.markdown("_No participants yet_")
-                
+
                 # Show pending requests
                 pending = st.session_state.challenge_system.pending_requests.get(challenge_name, [])
                 if pending:
                     st.markdown("**Pending Requests:**")
                     for p in pending:
                         st.markdown(f"- {p} _(pending approval)_")
-                
+
                 # Add apply button for users
                 if not st.session_state.admin:
                     if st.session_state.user not in participants and st.session_state.user not in pending:
@@ -863,21 +869,21 @@ with current_tab[4]:  # Challenges tab
         st.info("No active challenges")
 
 if st.session_state.admin:
-    with current_tab[5]:
+    with current_tab[6]:  # Add/Edit Entries
         st.subheader("Entry Management")
-        
+
         # Add tabs for adding new entries and editing existing ones
         entry_tabs = st.tabs(["Add New Entry", "Edit Existing Entry"])
-        
+
         with entry_tabs[0]:
             # Existing new entry code
             edit_date = st.date_input("Select Date", datetime.now(), key="new_entry_date")
             selected_name = st.selectbox(
-                "Select Participant", 
+                "Select Participant",
                 DEFAULT_PARTICIPANTS,
                 key="new_entry_participant"
             )
-            
+
             col1, col2 = st.columns(2)
             with col1:
                 st.write("### Base Points")
@@ -890,9 +896,9 @@ if st.session_state.admin:
                         key=f"new_{category}"
                     )
                     total_base += base_points[category]
-                
+
                 st.metric("Total Base Points", f"{total_base}/100")
-            
+
             with col2:
                 st.write("### Bonus Points")
                 bonus_points = st.slider(
@@ -901,7 +907,7 @@ if st.session_state.admin:
                 )
                 total_points = total_base + bonus_points
                 st.metric("Total Points", f"{total_points}/150")
-            
+
             if st.button("Save Entry"):
                 new_entry = {
                     'Name': selected_name,
@@ -912,53 +918,54 @@ if st.session_state.admin:
                     'Bonus Points': bonus_points,
                     'Total Points': total_points
                 }
-                
+
                 st.session_state.df = pd.concat([
                     st.session_state.df,
                     pd.DataFrame([new_entry])
                 ], ignore_index=True)
-                
+
                 save_data(st.session_state.df)
+                trigger_milestone_and_streak_checks(selected_name)
                 st.success("Entry saved successfully!")
-        
+
         with entry_tabs[1]:
             # Edit existing entry
             st.subheader("Edit Existing Entry")
-            
+
             # Convert dates properly and create unique entries list
             try:
                 # Ensure Date column is datetime
                 st.session_state.df['Date'] = pd.to_datetime(st.session_state.df['Date'])
-                
+
                 # Get unique dates and sort them
                 available_dates = sorted(
                     st.session_state.df['Date'].dt.date.unique(),
                     reverse=True
                 )
-                
+
                 if available_dates:
                     selected_date = st.selectbox(
                         "Select Date to Edit",
                         available_dates,
                         key="edit_entry_date"
                     )
-                    
+
                     # Filter entries for selected date
                     mask = st.session_state.df['Date'].dt.date == selected_date
                     date_entries = st.session_state.df[mask].copy()
-                    
+
                     if not date_entries.empty:
                         selected_entry_name = st.selectbox(
                             "Select Participant to Edit",
                             sorted(date_entries['Name'].unique()),
                             key="edit_entry_participant"
                         )
-                        
+
                         # Get the selected entry
                         entry_mask = (date_entries['Name'] == selected_entry_name)
                         if entry_mask.any():
                             entry_to_edit = date_entries[entry_mask].iloc[0]
-                            
+
                             col1, col2 = st.columns(2)
                             with col1:
                                 st.write("### Base Points")
@@ -973,9 +980,9 @@ if st.session_state.admin:
                                         key=f"edit_{category}"
                                     )
                                     total_base += base_points[category]
-                                
+
                                 st.metric("Total Base Points", f"{total_base}/100")
-                            
+
                             with col2:
                                 st.write("### Bonus Points")
                                 bonus_points = st.slider(
@@ -985,14 +992,14 @@ if st.session_state.admin:
                                 )
                                 total_points = total_base + bonus_points
                                 st.metric("Total Points", f"{total_points}/150")
-                            
+
                             if st.button("Update Entry"):
                                 try:
                                     # Remove existing entry
-                                    remove_mask = ~((st.session_state.df['Date'].dt.date == selected_date) & 
+                                    remove_mask = ~((st.session_state.df['Date'].dt.date == selected_date) &
                                                  (st.session_state.df['Name'] == selected_entry_name))
                                     st.session_state.df = st.session_state.df[remove_mask]
-                                    
+
                                     # Create updated entry
                                     updated_entry = {
                                         'Name': selected_entry_name,
@@ -1003,21 +1010,22 @@ if st.session_state.admin:
                                         'Bonus Points': bonus_points,
                                         'Total Points': total_points
                                     }
-                                    
+
                                     # Add the updated entry
                                     st.session_state.df = pd.concat([
                                         st.session_state.df,
                                         pd.DataFrame([updated_entry])
                                     ], ignore_index=True)
-                                    
+
                                     # Save the updated dataframe
                                     save_data(st.session_state.df)
+                                    trigger_milestone_and_streak_checks(selected_entry_name)
                                     st.success("Entry updated successfully!")
-                                    
+
                                     # Force rerun to refresh the display
                                     time.sleep(1)  # Small delay to ensure save completes
                                     st.rerun()
-                                    
+
                                 except Exception as e:
                                     st.error(f"Error updating entry: {str(e)}")
                         else:
@@ -1026,16 +1034,39 @@ if st.session_state.admin:
                         st.info("No entries found for selected date")
                 else:
                     st.info("No existing entries to edit")
-                    
+
             except Exception as e:
                 st.error(f"Error loading entries: {str(e)}")
 
-# Add badge management tab for admins
-if st.session_state.admin and len(current_tab) > 6:
+# Admin Dashboard Tab (only visible to admins)
+if st.session_state.admin and len(current_tab) > 1:
+    with current_tab[1]:  # Admin Dashboard
+        st.subheader("📊 Admin Dashboard")
+        col1, col2 = st.columns(2)
+        with col1:
+            today = datetime.now().date()
+            today_mask = pd.to_datetime(st.session_state.df['Date']).dt.date == today
+            total_points_today = st.session_state.df[today_mask]['Total Points'].sum()
+            st.metric("Total Points Awarded Today", int(total_points_today))
+        with col2:
+            active_participants_today = st.session_state.df[today_mask]['Name'].nunique()
+            st.metric("Active Participants Today", int(active_participants_today))
+        st.subheader("📈 Total Points Awarded Per Day (Last 30 Days)")
+        last_30 = datetime.now() - pd.Timedelta(days=29)
+        df_30 = st.session_state.df[pd.to_datetime(st.session_state.df['Date']) >= last_30]
+        if not df_30.empty:
+            daily = df_30.groupby(pd.to_datetime(df_30['Date']).dt.date)['Total Points'].sum().reset_index()
+            import plotly.express as px
+            fig = px.line(daily, x='Date', y='Total Points', markers=True)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No data for the last 30 days.")
+
+if st.session_state.admin:
     with current_tab[6]:
         badge_management()
 
-if st.session_state.admin and len(current_tab) > 7:
+if st.session_state.admin:
     with current_tab[7]:  # Manage Challenges tab
         admin_challenge_interface(st.session_state.challenge_system)
 
@@ -1046,7 +1077,7 @@ if st.session_state.admin:
             st.session_state.df = initialize_month()
             save_data(st.session_state.df)
             st.success("New month initialized!")
-        
+
         st.download_button(
             "Export Full Data",
             data=st.session_state.df.to_csv().encode('utf-8'),
@@ -1060,3 +1091,14 @@ try:
         handle_js_message(st.query_params['Message'])
 except Exception as e:
     st.warning(f"Failed to process JS message: {e}")
+
+def display_achievements(achievement_system, participant):
+    st.markdown(f"### 🏆 Achievements for {participant}")
+    data = achievement_system.data.get(participant, {})
+    if not data:
+        st.info("No achievements yet.")
+        return
+    for category, achievements in data.items():
+        st.markdown(f"#### {category.title()}")
+        for achievement, count in achievements.items():
+            st.markdown(f"- **{achievement}**: {count}")
